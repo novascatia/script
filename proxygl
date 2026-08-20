@@ -9,12 +9,14 @@ local wm_config = {
 local rainbowchat = false
 local pullwrench = false
 local tpdisplay = false 
-local take_enabled = false
+local take_enabled = false      -- NEW: silent take toggle
+local take_debug = false        -- NEW: set true to log raw packet fields while testing
 local logspin = {}
 local spin_mode = "REME" 
 local SPAM = {ENABLE = false, DELAY = 0, TEXT = ""}
 local spam_thread_running = false
 local is_cycling = false
+local skin_thread_running = false
 local skins = {
     "action|setSkin\ncolor|1348237567",
     "action|setSkin\ncolor|1348237567",
@@ -32,26 +34,21 @@ local skins = {
     "action|setSkin\ncolor|3370516479",
     "action|setSkin\ncolor|3370516479"
 }
-
 local function get_full_wm()
     return string.format("%s[%s%s%s]", wm_config.color_bracket, wm_config.color_text, wm_config.text, wm_config.color_bracket)
 end
-
 function console(b, a)
     local prefix = (a ~= false) and get_full_wm() .. " " or "`9[`4NOVA`9] "
     LogToConsole(prefix .. b)
 end
-
 local me = getLocal()
 if not me then
     return
 end
-
 local user_id_str = tostring(math.floor(me.userID))
 if user_id_str == "0" then
     return
 end
-
 local allowed_users = {
     ["3082134"] = "Dexterity",
     ["3130796"] = "Yurio",
@@ -86,10 +83,8 @@ local allowed_users = {
     ["3093500"] = "El",
     ["3142316"] = "Awtism"
 }
-
 local user_name = allowed_users[user_id_str]
 local is_whitelisted = (user_name ~= nil)
-
 if not is_whitelisted then
     local access_denied_dialog = string.format([[
 set_default_color|`0
@@ -105,9 +100,7 @@ add_quick_exit|
     sendVariant({v1 = "OnDialogRequest", v2 = access_denied_dialog})
     return
 end
-
 console("`2Whitelist check passed. Welcome " .. user_name .. "!", false)
-
 function splitp(p)
     local result = {}
     for param in (p or ""):gmatch("%S+") do
@@ -115,7 +108,6 @@ function splitp(p)
     end
     return result
 end
-
 function getinv(id)
     for _, i in pairs(getInventory()) do
         if i.id == id then
@@ -124,11 +116,9 @@ function getinv(id)
     end
     return 0
 end
-
 function lockbalance()
     return (getinv(242) or 0) + ((getinv(7188) or 0) * 10000) + ((getinv(1796) or 0) * 100)
 end
-
 function rainbow(a)
     local aa = ""
     for i = 1, #a do
@@ -142,7 +132,6 @@ function rainbow(a)
     end
     return aa
 end
-
 function banks(m, amount)
     local a = "action|dialog_return\ndialog_name|my_bank_account\nbuttonClicked|"
     if m == "depo" then
@@ -151,26 +140,20 @@ function banks(m, amount)
         sendPacket(2, a .. "wd_true\n\nwd_amount|" .. amount)
     end
 end
-
 function getBgl(x, y)
     sendPacket(2, 'action|dialog_return\ndialog_name|phonecall\ntilex|' .. x .. '|\ntiley|' .. y .. '|\nnum|-34|\nbuttonClicked|turnin\n')
 end
-
 function pull(netid)
     sendPacket(2, string.format("action|dialog_return\ndialog_name|popup\nnetID|%s|\nbuttonClicked|pull", netid))
 end
-
 function convert(a)
     sendPacketRaw(false, {type = 10, value = a})
 end
-
 function state(z, x, y)
     sendPacketRaw(false, {type = 0, x = x, y = y, state = z})
 end
-
 local TITLE_STATE = { of_legend = 0, dr_name = 0, blue_name = 0 }
 local TITLE_COMMAND_MAP = { ["legend"] = "of_legend", ["dr"] = "dr_name", ["blue"] = "blue_name" }
-
 function NovaSendTitlePacket()
     local packet = string.format("action|dialog_return\ndialog_name|titleswitch\nof_legend|%d\ndr_name|%d\nblue_name|%d\n", 
         TITLE_STATE.of_legend, TITLE_STATE.dr_name, TITLE_STATE.blue_name)
@@ -178,16 +161,13 @@ function NovaSendTitlePacket()
     console(string.format("Title updated. Legend: %d, DR: %d, Blue: %d", 
         TITLE_STATE.of_legend, TITLE_STATE.dr_name, TITLE_STATE.blue_name))
 end
-
 local NOTIFIER_ITEM_NAMES = { [242] = "World Lock", [1796] = "Diamond Lock", [7188] = "Blue Gem Lock", [17862] = "`bAbsolute Lock" }
-
 function drop(id, count, facing, x, y)
     local current_inv = getinv(id)
     if current_inv < count then
         console("`4Failed: `0You only have `2" .. current_inv .. " `0of " .. (NOTIFIER_ITEM_NAMES[id] or "that item") .. "!")
         return 
     end
-
     state(facing, x, y)
     local p = string.format("action|dialog_return\ndialog_name|drop_item\nitemID|%d|\ncount|%d", id, count)
     sendPacket(2, p)
@@ -198,7 +178,6 @@ function drop(id, count, facing, x, y)
         sendPacket(2, "action|input\n|text|" .. message)
     end
 end
-
 function cdrop(amount, facing, x, y)
     if amount > lockbalance() then
         return console("Insufficient balance", 1)
@@ -211,7 +190,6 @@ function cdrop(amount, facing, x, y)
     if dl > 0 then drop(1796, dl, facing, x, y) end
     if bgl > 0 then drop(7188, bgl, facing, x, y) end
 end
-
 local dialogspam = function()
     local abcd = string.format(
         [[
@@ -239,7 +217,6 @@ add_quick_exit|
     )
     sendVariant({v1 = "OnDialogRequest", v2 = abcd})
 end
-
 function startSpamThread()
     if spam_thread_running then return end 
     spam_thread_running = true
@@ -257,7 +234,6 @@ function startSpamThread()
         spam_thread_running = false
     end)
 end
-
 local function start_skin_cycle()
     if skin_thread_running then return end
     skin_thread_running = true
@@ -279,11 +255,42 @@ local function start_skin_cycle()
         skin_thread_running = false
     end)
 end
-
 function getPlayerNameByNetID(x)
     local p = getPlayerByNetID(x)
     if p then return p.name end
     return ""
+end
+
+-- NEW: silent take helper — finds a WorldObject sitting on a tile and fires an
+-- item-activate-object request for it directly, without moving/teleporting.
+local TAKE_ITEM_IDS = { [242] = true, [1796] = true, [7188] = true }
+function try_silent_take(tile_x, tile_y)
+    local ok, objects = pcall(getObjectList)
+    if not ok or not objects then
+        if take_debug then console("`4[take] getObjectList() failed or unavailable``") end
+        return false
+    end
+    for _, obj in pairs(objects) do
+        if obj.pos and obj.itemid and TAKE_ITEM_IDS[obj.itemid] then
+            local obj_tile_x = math.floor(obj.pos.x / 32)
+            local obj_tile_y = math.floor(obj.pos.y / 32)
+            if take_debug then
+                console(string.format("`8[take] obj id=%s itemid=%s tile=(%d,%d)``", tostring(obj.id), tostring(obj.itemid), obj_tile_x, obj_tile_y))
+            end
+            if obj_tile_x == tile_x and obj_tile_y == tile_y then
+                sendPacketRaw(false, {
+                    type = 11,          -- PACKET_ITEM_ACTIVATE_OBJECT_REQUEST
+                    netid = obj.id,
+                    value = obj.id,
+                    x = obj.pos.x,
+                    y = obj.pos.y
+                })
+                console(string.format("`2Silent-took %s``", NOTIFIER_ITEM_NAMES[obj.itemid] or tostring(obj.itemid)))
+                return true
+            end
+        end
+    end
+    return false
 end
 
 local cmd 
@@ -329,7 +336,6 @@ cmd = {
         usage = "/c <2.5x3>",
         label = 242
     },
-
     ["buyer"] = {
         func = function()
             local str = ""
@@ -354,17 +360,6 @@ add_quick_exit|
         usage = "/buyer",
         label = 11096
     },
-
-["take"] = {
-    func = function()
-        take_enabled = not take_enabled
-        console(string.format("Silent Take %s", take_enabled and "`2Enabled``" or "`4Disabled``"))
-    end,
-    desc = "Auto-collect WL/DL/BGL saat dipunch, tanpa teleport.",
-    usage = "/take",
-    label = 242
-}
-
     ["tpd"] = {
         func = function()
             tpdisplay = not tpdisplay
@@ -374,7 +369,24 @@ add_quick_exit|
         usage = "/tpd",
         label = 1422
     },
-
+    ["take"] = {
+        func = function()
+            take_enabled = not take_enabled
+            console(string.format("Silent Take %s", take_enabled and "`2Enabled``" or "`4Disabled``"))
+        end,
+        desc = "Auto-collect WL/DL/BGL on punch, no teleport.",
+        usage = "/take",
+        label = 242
+    },
+    ["takedebug"] = {
+        func = function()
+            take_debug = not take_debug
+            console(string.format("Take Debug Log %s", take_debug and "`2Enabled``" or "`4Disabled``"))
+        end,
+        desc = "Print raw packet/object info while punching (debug /take).",
+        usage = "/takedebug",
+        label = 242
+    },
     ["db"] = {
         func = function(num)
             local count = tonumber(num)
@@ -420,7 +432,6 @@ add_quick_exit|
         usage = "/dw <amount>",
         label = 242
     },
-
     ["bgl"] = {
         func = function(num)
             local count = tonumber(num)
@@ -794,7 +805,7 @@ add_quick_exit|
     ["sc"] = {
         func = function()
             local str = ""
-		local cmd_order = { "sc", "skin", "c", "mode", "tpd", "title", "wm", "wp", "drop", "wl", "dl", "bgl", "abso", "cd", "dall", "x", "depo", "wd", "tf", "rainbows", "logspin", "spammer", "pf", "lpf", "ad", "detect", "detectreset", "warn", "warp", "close" }
+		local cmd_order = { "sc", "skin", "c", "mode", "tpd", "take", "takedebug", "title", "wm", "wp", "drop", "wl", "dl", "bgl", "abso", "cd", "dall", "x", "depo", "wd", "tf", "rainbows", "logspin", "spammer", "pf", "lpf", "ad", "detect", "detectreset", "warn", "warp", "close" }
             for _, cmdname in ipairs(cmd_order) do
                 local v = cmd[cmdname]
                 if v then
@@ -841,7 +852,6 @@ add_quick_exit|
         usage = "/warp <`2world``>",
         label = 32
     },
-
     ["skin"] = {
         func = function()
             is_cycling = not is_cycling
@@ -869,7 +879,6 @@ add_quick_exit|
         label = 11096
     }
 }
-
 function OnSendPacket(type, packet)
     if type == 2 and packet:find("action|input") then
         local text = packet:match("text|(.+)")
@@ -934,7 +943,16 @@ function OnSendPacket(type, packet)
     return false
 end
 
+-- Rebuilt OnSendPacketRaw: keeps original /tpd behaviour intact, and adds
+-- /take handling with a debug branch so you can see exactly what the
+-- launcher gives you when you punch (type/value/px/py), since that's the
+-- most likely reason nothing happened.
 function OnSendPacketRaw(a)
+    if take_debug then
+        console(string.format("`8[take-debug] type=%s value=%s px=%s py=%s x=%s y=%s``",
+            tostring(a.type), tostring(a.value), tostring(a.px), tostring(a.py), tostring(a.x), tostring(a.y)))
+    end
+
     if tpdisplay then
         if a.type == 3 and a.value == 18 then
             for _, tile in pairs(getTiles()) do
@@ -950,19 +968,10 @@ function OnSendPacketRaw(a)
 
     if take_enabled and a.type == 3 then
         local tile_x, tile_y = a.px, a.py
-        for _, obj in pairs(getObjectList()) do
-            local obj_tile_x = math.floor(obj.pos.x / 32)
-            local obj_tile_y = math.floor(obj.pos.y / 32)
-            if obj_tile_x == tile_x and obj_tile_y == tile_y then
-                if obj.itemid == 242 or obj.itemid == 1796 or obj.itemid == 7188 then
-                    sendPacketRaw(false, {
-                        type = 11,
-                        value = obj.id,
-                        x = obj.pos.x,
-                        y = obj.pos.y
-                    })
-                    return true
-                end
+        if tile_x ~= nil and tile_y ~= nil then
+            local took = try_silent_take(tile_x, tile_y)
+            if took then
+                return true
             end
         end
     end
@@ -976,9 +985,7 @@ function calculateReme(n)
     for i = 1, #s do sum = sum + tonumber(s:sub(i, i)) end
     return sum % 10
 end
-
 local TARGET_LOCK_NAMES = { ["World Lock"] = true, ["Diamond Lock"] = true, ["Blue Gem Lock"] = true, ["`bAbsolute Lock"] = true }
-
 function OnVariant(var)
     local fn = var.v1
     if fn == "OnConsoleMessage" and var.v2 then
@@ -994,7 +1001,6 @@ function OnVariant(var)
             end
         end
     end
-
     if fn == "OnTalkBubble" and var.v3 and var.v3:find("spun the wheel and got") then
         local num = tonumber(string.match(var.v3:gsub("`.", ""), "(%d+)%!"))
         local netid = var.v2
@@ -1028,7 +1034,6 @@ function OnVariant(var)
             return true
         end
     end
-
     if fn == "OnDialogRequest" and var.v2 then
         local content = var.v2
         if auto_door_toggle and content:find("add_checkbox|checkbox_public|Usable by public") then
@@ -1042,7 +1047,6 @@ function OnVariant(var)
             end
             return true
         end
-
         if pullwrench and content:find("add_button|pull|") then
             local wealth_line = content:match("add_smalltext|`wWealth:``(.-)|left|")
             local bgl_count = 0
@@ -1063,7 +1067,6 @@ function OnVariant(var)
                 return true
             end
         end
-
         if content:find("phonecall") and getinv(1796) >= 100 then
             local tilex, tiley = content:match("tilex|(%d+)"), content:match("tiley|(%d+)")
             if tilex and tiley then getBgl(tilex, tiley) end
@@ -1072,14 +1075,12 @@ function OnVariant(var)
     end
     return false
 end
-
 removeHook("OnSendPacket")
 removeHook("OnVariant")
 removeHook("OnSendPacketRaw")
 addHook(OnSendPacket, "OnSendPacket")
 addHook(OnVariant, "OnVariant")
 addHook(OnSendPacketRaw, "OnSendPacketRaw")
-
 local function dialoggazzete()
     return [[
 set_default_color|`0
@@ -1092,6 +1093,7 @@ add_smalltext|[+] Check /sc to see all commands|left|
 add_smalltext|[+] Fixed /warp and /warn bug on GL|left|
 add_smalltext|[+] `4/wm Reworked, `9Check this out|left|
 add_smalltext|[+] Added /skin for blink skin|left|
+add_smalltext|[+] Added /take (silent collect on punch)|left|
 add_spacer|small|
 add_smalltext|`2Creator``: `1@novascatia|left|
 add_smalltext|`2Donate World``: `1DEXT|left|
@@ -1101,5 +1103,4 @@ add_quick_exit|
 ]]
 end
 sendVariant({v1 = "OnDialogRequest", v2 = dialoggazzete()})
-
 console("Script Loaded Successfully.")
