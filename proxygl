@@ -355,6 +355,16 @@ add_quick_exit|
         label = 11096
     },
 
+["take"] = {
+    func = function()
+        take_enabled = not take_enabled
+        console(string.format("Silent Take %s", take_enabled and "`2Enabled``" or "`4Disabled``"))
+    end,
+    desc = "Auto-collect WL/DL/BGL saat dipunch, tanpa teleport.",
+    usage = "/take",
+    label = 242
+}
+
     ["tpd"] = {
         func = function()
             tpdisplay = not tpdisplay
@@ -364,16 +374,6 @@ add_quick_exit|
         usage = "/tpd",
         label = 1422
     },
-
-    ["take"] = {
-        func = function()
-            take_enabled = not take_enabled
-            console(string.format("Silent Take %s", take_enabled and "`2Enabled``" or "`4Disabled``"))
-        end,
-        desc = "Auto-collect WL/DL/BGL on punch",
-        usage = "/take",
-        label = 242
-}
 
     ["db"] = {
         func = function(num)
